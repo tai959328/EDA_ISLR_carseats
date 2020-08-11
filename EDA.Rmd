@@ -418,7 +418,7 @@ The following will create an EDA report for carseats. The file format is pdf, an
 # carseats %>%
 #   eda_report(target = Sales)
 
-# Error in eda_report.data.frame(., target = Sales) : No TeX installation detected. Please install TeX before running. or Use output_format = "html"
+# Error in eda_report.data.frame(., target = Sales) : No TeX installation detected. Please install TeX before running. or Use output_format = "html" 
 ```
 
 
