@@ -1,0 +1,435 @@
+---
+title: "Exploratory Data Analysis"
+output: html_document
+---
+
+```{r, include=FALSE}
+library(ISLR)
+library(dplyr)
+library(dlookr)
+setwd("C:/Users/T/Desktop/EDA_ISLR_carseats")
+```
+
+## Introduction
+After you have acquired the data, you should do the following:
+
+- Diagnose data quality.
+    + If there is a problem with data quality,
+    + The data must be corrected or re-acquired.
+- Explore data to understand the data and find scenarios for performing the analysis.
+- Derive new variables or perform variable transformations.
+
+The dlookr package makes these steps fast and easy:
+
+- Performs an data diagnosis or automatically generates a data diagnosis report.
+- Discover data in a variety of ways, and automatically generate EDA(exploratory data analysis) report.
+- Imputate missing values and outliers, resolve skewed data, and binarize continuous variables into categorical variables. And generates an automated report to support it.
+
+This document introduces EDA(Exploratory Data Analysis) methods provided by the dlookr package. You will learn how to EDA of tbl_df data that inherits from data.frame and data.frame with functions provided by dlookr.
+dlookr synergy with dplyr increases. Particularly in data exploration and data wrangle, it increases the efficiency of the tidyverse package group.
+
+## References
+https://cran.r-project.org/web/packages/dlookr/vignettes/EDA.html
+
+
+## Datasets
+Data diagnosis supports the following data structures.
+
+- data frame : data.frame class.
+- data table : tbl_df class.
+- table of DBMS : table of the DBMS through tbl_dbi.
+    + Using dplyr backend for any DBI-compatible database.
+
+To illustrate the basic use of EDA in the dlookr package, I use a Carseats datasets. Carseats in the ISLR package is simulation dataset that sells children’s car seats at 400 stores. This data is a data.frame created for the purpose of predicting sales volume.
+
+```{r}
+str(Carseats)
+```
+Carseats is a data frame with 400 observations on the following 11 variables.
+
+- **Sales**: Unit sales (in thousands) at each location
+- **CompPrice**: Price charged by competitor at each location
+- **Income**: Community income level (in thousands of dollars)
+- **Advertising**:Local advertising budget for company at each location (in thousands of dollars)
+- **Population**: Population size in region (in thousands)
+- **Price**: Price company charges for car seats at each site
+- **ShelveLoc**: A factor with levels Bad, Good and Medium indicating the quality of the shelving location for the car seats at each site
+- **Age**: Average age of the local population
+- **Education**: Education level at each location
+- **Urban**: A factor with levels No and Yes to indicate whether the store is in an urban or rural location
+- **US**: A factor with levels No and Yes to indicate whether the store is in the US or not
+
+
+When data analysis is performed, data containing missing values is often encountered. However, Carseats is complete data without missing. Therefore, the missing values are generated as follows. And I created a data.frame object named carseats.
+
+```{r}
+carseats <- ISLR::Carseats
+sapply(carseats, function(x) sum(is.na(x)))
+summary(carseats)
+```
+```{r}
+set.seed(123)
+carseats[sample(seq(NROW(carseats)), 20), "Income"] <- NA
+
+set.seed(456)
+carseats[sample(seq(NROW(carseats)), 10), "Urban"] <- NA
+
+sapply(carseats, function(x) sum(is.na(x)))
+summary(carseats)
+```
+  
+
+## Exploratory Data Analysis
+
+dlookr can help to understand the distribution of data by calculating descriptive statistics of numerical data. In addition, correlation between variables is identified and normality test is performed. It also identifies the relationship between target variables and independent variables.:
+
+The following is a list of the EDA functions included in the dlookr package:
+
+- describe() provides descriptive statistics for numerical data.
+- normality() and plot_normality() perform normalization and visualization of numerical data.
+- correlate() and plot_correlate() calculate the correlation coefficient between two numerical data and provide visualization.
+- target_by() defines the target variable and relate() describes the relationship with the variables of interest corresponding to the target variable.
+- plot.relate() visualizes the relationship to the variable of interest corresponding to the destination variable.
+- eda_report() performs an exploratory data analysis and reports the results.
+
+
+## Univariate data EDA
+
+### Calculating descriptive statistics for **numerical** variables using describe()
+describe() computes descriptive statistics for numerical data. The descriptive statistics help determine the distribution of numerical variables. Like function of dplyr, the first argument is the tibble (or data frame). The second and subsequent arguments refer to variables within that data frame.
+
+The variables of the tbl_df object returned by describe() are as follows.
+
+- n : number of observations excluding missing values
+- na : number of missing values
+- mean : arithmetic average
+- sd : standard devation
+- se_mean : standrd error mean. sd/sqrt(n)
+- IQR : interquartile range (Q3-Q1)
+- skewness : skewness
+- kurtosis : kurtosis
+- p25 : Q1. 25% percentile
+- p50 : median. 50% percentile
+- p75 : Q3. 75% percentile
+- p01, p05, p10, p20, p30 : 1%, 5%, 20%, 30% percentiles
+- p40, p60, p70, p80 : 40%, 60%, 70%, 80% percentiles
+- p90, p95, p99, p100 : 90%, 95%, 99%, 100% percentiles
+
+```{r}
+describe(carseats)
+# can describe specific variables e.g. describe(carseats, Sales, CompPrice, Income)
+```
+
+*skewness* : The left-skewed distribution data, that is, the variables with large positive skewness should consider the log or sqrt transformations to follow the normal distribution. The variables Advertising seem to need to consider variable transformations.
+*mean and sd, se_mean* : The Population with a large standard error of the mean(se_mean) has low representativeness of the arithmetic mean(mean). The standard deviation(sd) is much larger than the arithmetic average.
+
+
+```{r}
+carseats %>%
+  describe() %>%
+  select(variable, skewness, mean, sd, p25, p50, p75) %>% 
+  filter(!is.na(skewness)) %>%
+  arrange(desc(abs(skewness)))
+```
+
+The describe() function supports the group_by() function syntax of dplyr.
+
+```{r}
+carseats %>%
+  group_by(US, Urban) %>% 
+  describe(Sales, Income) 
+```
+
+
+### Test of normality on **numeric** variables using normality()
+
+normality() performs a normality test on numerical data. Shapiro-Wilk normality test is performed. If the number of observations is larger than 5000, 5000 observations are extracted by random simple sampling and then tested.
+
+The variables of tbl_df object returned by normality() are as follows.
+
+- statistic : Statistics of the Shapiro-Wilk test
+- p_value : p-value of the Shapiro-Wilk test
+- sample : Number of sample observations performed Shapiro-Wilk test
+
+normality() performs the normality test for all numerical variables of carseats as follows:
+
+```{r}
+normality(carseats)
+# can performs a normality test on only a few selected variables e.g. normality(carseats, Sales, CompPrice, Income)
+```
+
+
+You can use dplyr to sort non-normal distribution variables by p_value:
+```{r}
+carseats %>%
+  normality() %>%
+  filter(p_value <= 0.01) %>% 
+  arrange(abs(p_value))
+```
+
+These are the variables which did not pass the normality test at a significance level of 0.01. In particular, the Advertising variable is considered to be the most non-normal distribution. In other words, the lower the p-value, the less normal the distribution. As mentioned above with skewness, consider transformations to normalize non-normally distributed variables.
+
+The normality() function supports the group_by() function syntax in the dplyr package.
+
+```{r}
+carseats %>%
+  group_by(ShelveLoc, US) %>%
+  normality(Income) %>% 
+  arrange(desc(p_value))
+```
+
+The Income variable does not follow the normal distribution. However, if the US is No and the ShelveLoc is Good or Bad at the significance level of 0.01, it follows the normal distribution.
+
+In the following, we perform normality test of log(Income) for each combination of ShelveLoc and US variables to inquire about normal distribution cases.
+
+```{r}
+carseats %>%
+  mutate(log_income = log(Income)) %>%
+  group_by(ShelveLoc, US) %>%
+  normality(log_income) %>%
+  filter(p_value > 0.01) #looking for p-values above the 0.01 threshold, i.e. looking for cases for normal distribution of log(Income) 
+```
+This would mean that log(Income) is non-normal for all cases except ShelveLoc = Bad and US = No?
+
+
+### Normalization visualization of numerical variables using plot_normality()
+
+plot_normality() visualizes the normality of numeric data.
+
+The information that plot_normality() visualizes is as follows.
+
+- Histogram of original data
+- Q-Q plot of original data
+- histogram of log transformed data
+- Histogram of square root transformed data
+
+Numerical data following a power-law distribution are often encountered in data analysis. Since the numerical data following the power distribution is transformed into the normal distribution by performing the log and sqrt transform, the histogram of the data for the log and sqrt transform is drawn.
+
+plot_normality() can also specify several variables like normality() function.
+
+```{r}
+plot_normality(carseats)
+# can make plots for specified variables e.g. plot_normality(carseats, Sales, CompPrice)
+```
+
+
+The plot_normality() function also supports the group_by() function syntax in the dplyr package.
+
+```{r}
+carseats %>%
+  # filter(ShelveLoc == "Bad") %>%
+  group_by(ShelveLoc, US) %>%
+  plot_normality(Income)
+```
+
+Notice the **log(Income)** for ShelveLoc = Bad and US = No looks somewhat normal while the rest are not.
+
+
+## Bivariate data EDA
+
+### Calculation of correlation coefficient using correlate()
+
+Correlate() finds the correlation coefficient of all combinations of carseats numerical variables as follows:
+
+```{r}
+correlate(carseats)
+# can compute correlations between specified variables e.g. correlate(carseats, Sales, CompPrice, Income)
+```
+```{r}
+carseats %>%
+  correlate() %>%
+  arrange(desc(abs(coef_corr)))
+```
+
+The correlate() function also supports the group_by() function syntax in the dplyr package.
+
+```{r}
+carseats %>%
+  filter(ShelveLoc == "Good") %>%
+  group_by(Urban, US) %>%
+  correlate(Sales) %>%
+  filter(abs(coef_corr) > 0.5)
+```
+
+
+### Visualization of the correlation matrix using plot_correlate()
+
+plot_correlate() visualizes the correlation matrix.
+
+```{r}
+plot_correlate(carseats)
+# can specify variables to use e.g. plot_correlate(carseats, Sales, Price)
+```
+
+The plot_correlate() function also supports the group_by() function syntax in the dplyr package.
+
+```{r}
+carseats %>%
+  # filter(ShelveLoc == "Good") %>%
+  group_by(Urban, US) %>%
+  plot_correlate(Sales)
+```
+
+
+## EDA based on target variable
+
+### Definition of target variable
+
+To perform EDA based on target variable, you need to create a target_by class object. target_by() creates a target_by class with an object inheriting data.frame or data.frame. target_by() is similar to group_by() in dplyr which createsg rouped_df. The difference is that you specify only one variable.
+
+The following is an example of specifying US as target variable in carseats data.frame:
+
+```{r}
+categ <- target_by(carseats, US)
+```
+
+
+## EDA when target variable is **categorical** variable
+
+Let’s do the EDA when the target variable is categorical. When the categorical variable US is the target variable, the relationship between the target variable and the predictor is examined.
+
+### Cases where predictors are numeric variable
+
+relate() shows the relationship between the target variable and the predictor. The following example shows the relationship between Sales and the target variable US. The predictor Sales is a numeric variable. In this case, the descriptive statistics are shown for each level of the target variable.
+
+```{r}
+cat_num <- relate(categ, Sales)
+cat_num
+# summary(cat_num)
+```
+
+The relate class object created with relate() visualizes the relationship between the target variable and the predictor with plot(). The relationship between US and Sales is represented by a density plot.
+
+```{r}
+plot(cat_num)
+```
+
+### Cases where predictors are categorical variable
+The following example shows the relationship between ShelveLoc and the target variable US. The predictor, ShelveLoc, is a categorical variable. In this case, we show the contigency table of two variables. The summary() function also performs an independence test on the contigency table.
+
+```{r}
+cat_cat <- relate(categ, ShelveLoc)
+cat_cat
+summary(cat_cat)
+```
+
+Chi-Square Test of Independence:
+
+- *Null hypothesis*: Assumes that there is no association between the two variables.
+- *Alternative hypothesis*: Assumes that there is an association between the two variables.
+
+
+plot() visualizes the relationship between the target variable and the predictor. The relationship between US and ShelveLoc is represented by a mosaics plot.
+
+```{r}
+plot(cat_cat)
+```
+
+
+## EDA when target variable is **numerical** variable
+Let’s do the EDA when the target variable is numeric. When the numeric variable Sales is the target variable, the relationship between the target variable and the predictor is examined.
+
+```{r}
+num <- target_by(carseats, Sales)
+```
+
+
+### Cases where predictors are numeric variable
+
+The following example shows the relationship between Price and the target variable Sales. Price, a predictor, is a numeric variable. In this case, we show the result of simple regression model of target ~ predictor relation. The summary() function represents the details of the model.
+
+```{r}
+num_num <- relate(num, Price)
+num_num
+summary(num_num)
+```
+
+Can check lm model summary to understand the relationship between the numerical target variable and the numerical predictor variable.
+
+
+Can also use plot(), which visualizes the relationship between the target variable and the predictor. The relationship between Sales and Price is represented as a scatter plot. The plot on the left represents the scatter plot of Sales and Price and the confidence interval of the regression line and the regression line. The plot on the right represents the relationship between the original data and the predicted value of the linear model as a scatter plot. If there is a linear relationship between the two variables, the observations will converge on the red diagonal in the right scatter plot.
+
+```{r}
+plot(num_num)
+```
+
+The scatter plot of the data with a large number of observations is output as overlapping points. This makes it difficult to judge the relationship between the two variables. It also takes a long time to perform the visualization. In this case, the above problem can be solved by hexabin plot.
+
+In plot(), the hex_thres argument provides a basis for drawing hexabin plots. For data with more than this number of observations, draw a hexabin plot.
+
+Next, draw a hexabin plot with plot() not a scatter plot, specifying 350 for the hex_thres argument. This is because the number of observations is 400.
+
+```{r}
+library(hexbin)
+plot(num_num, hex_thres = 350)
+```
+
+### Cases where predictors are categorical variable
+The following example shows the relationship between ShelveLoc and the target variable Sales. The predictor, ShelveLoc, is a categorical variable. It shows the result of performing one-way ANOVA of target ~ predictor relation. The results are represented in terms of an analysis of variance. The summary() function also shows the regression coefficients for each level of the predictor. In other words, it shows detailed information of simple regression analysis of target ~ predictor relation.
+
+```{r}
+num_cat <- relate(num, ShelveLoc)
+num_cat
+summary(num_cat)
+```
+
+
+plot() visualizes the relationship between the target variable and the predictor. The relationship between Sales and ShelveLoc is represented by a box plot.
+
+```{r}
+plot(num_cat)
+```
+
+
+## Creating an EDA report using eda_report()
+
+eda_report() performs EDA on all variables of the data frame or object (tbl_df,tbl, etc.) that inherits the data frame.
+
+eda_report() creates an EDA report in two forms:
+
+- pdf file based on Latex
+- html file
+
+The contents of the report are as follows.:
+
+- Introduction
+  + Information of Dataset
+  + Information of Variables
+  + Numerical Variables
+- Univariate Analysis
+  + Descriptive Statistics
+  + Normality Test of Numerical Variables
+    - Statistics and Visualization of (Sample) Data
+- Relationship Between Variables
+  + Correlation Coefficient
+    - Correlation Coefficient by Variable Combination
+    - Correlation Plot of Numerical Variables
+- Target based Analysis
+  + Grouped Descriptive Statistics
+    - Grouped Numerical Variables
+    - Grouped Categorical Variables
+  + Grouped Relationship Between Variables
+    - Grouped Correlation Coefficient
+    - Grouped Correlation Plot of Numerical Variables
+
+The following will create an EDA report for carseats. The file format is pdf, and the file name is EDA_Report.pdf.
+
+```{r}
+# carseats %>%
+#   eda_report(target = Sales)
+
+# Error in eda_report.data.frame(., target = Sales) : No TeX installation detected. Please install TeX before running. or Use output_format = "html"
+```
+
+
+The following generates an HTML-formatted report named EDA.html.
+
+```{r, message=FALSE, results=FALSE}
+carseats %>%
+  eda_report(target = Sales,
+             output_format = "html",
+             output_file = "EDA_Report.html",
+             output_dir = getwd()) # option to save output directly into working directory
+```
+
+The EDA report is an automated report to assist in the EDA process. Design the data analysis scenario with reference to the report results.
